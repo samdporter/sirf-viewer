@@ -190,8 +190,8 @@ def print_data_info(data: Any) -> None:
         If data object doesn't have required methods
     """
     info = get_data_info(data)
-    
-    print(f"SIRF Data Information:")
+
+    print("SIRF Data Information:")
     print(f"  Type: {info['type']}")
     print(f"  Shape: {info['shape']}")
     print(f"  Dimensions: {info['dimensions']}")

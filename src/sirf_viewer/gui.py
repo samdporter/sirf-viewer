@@ -12,10 +12,12 @@ from typing import Optional, Any
 import numpy as np
 
 try:
-    from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QPushButton, QFileDialog, QLabel, 
-                               QSlider, QComboBox, QSpinBox, QGroupBox, 
-                               QMessageBox, QSplitter, QFrame)
+    from PyQt5.QtWidgets import (
+        QApplication, QMainWindow, QWidget, QVBoxLayout, 
+        QHBoxLayout, QPushButton, QFileDialog, QLabel, 
+        QSlider, QComboBox, QSpinBox, QGroupBox, 
+        QMessageBox, QSplitter, QFrame
+    )
     from PyQt5.QtCore import Qt, QTimer
     from PyQt5.QtGui import QImage, QPixmap
     PYQT_AVAILABLE = True
@@ -115,6 +117,18 @@ class SIRFViewerGUI(QMainWindow):
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
         
+        self.view_selection_group = QGroupBox("View Selection") 
+        view_layout = QVBoxLayout()
+
+        self.view_combo = QComboBox()
+        self.view_combo.currentTextChanged.connect(self.on_view_changed)
+        view_layout.addWidget(QLabel("View:"))
+        view_layout.addWidget(self.view_combo)
+
+        self.view_selection_group.setLayout(view_layout)
+        layout.addWidget(self.view_selection_group)
+        self.view_selection_group.setEnabled(False)
+        
         # Viewing controls group
         self.view_group = QGroupBox("Viewing Controls")
         view_layout = QVBoxLayout()
@@ -159,7 +173,7 @@ class SIRFViewerGUI(QMainWindow):
         layout.addWidget(display_group)
         
         # Animation controls
-        anim_group = QGroupBox("Animation")
+        self.anim_group = QGroupBox("Animation")
         anim_layout = QVBoxLayout()
         
         # Animation controls
@@ -187,23 +201,23 @@ class SIRFViewerGUI(QMainWindow):
         self.create_gif_btn = QPushButton('Create GIF')
         self.create_gif_btn.clicked.connect(self.create_gif)
         anim_layout.addWidget(self.create_gif_btn)
-        
-        anim_group.setLayout(anim_layout)
-        layout.addWidget(anim_group)
-        anim_group.setEnabled(False)
-        
+
+        self.anim_group.setLayout(anim_layout)
+        layout.addWidget(self.anim_group)
+        self.anim_group.setEnabled(False)
+
         # Export controls
-        export_group = QGroupBox("Export")
+        self.export_group = QGroupBox("Export")
         export_layout = QVBoxLayout()
         
         self.save_image_btn = QPushButton('Save Current View')
         self.save_image_btn.clicked.connect(self.save_current_view)
         export_layout.addWidget(self.save_image_btn)
-        
-        export_group.setLayout(export_layout)
-        layout.addWidget(export_group)
-        export_group.setEnabled(False)
-        
+
+        self.export_group.setLayout(export_layout)
+        layout.addWidget(self.export_group)
+        self.export_group.setEnabled(False)
+
         # Add stretch to push everything up
         layout.addStretch()
         
@@ -226,13 +240,13 @@ class SIRFViewerGUI(QMainWindow):
         filename, _ = QFileDialog.getOpenFileName(
             self, 'Load ImageData', '', 'ImageData files (*.hv);;All files (*)'
         )
-        
+
         if filename:
             try:
                 self.current_data = sirf.ImageData(filename)
-                self.file_info_label.setText(f'Loaded: {os.path.basename(filename)}\nType: ImageData')
-                self.setup_viewer()
-                self.statusBar().showMessage(f'Loaded ImageData: {filename}')
+                self._load_and_setup_viewer(
+                    filename, '\nType: ImageData', 'Loaded ImageData: '
+                )
             except Exception as e:
                 QMessageBox.critical(self, 'Error', f'Failed to load ImageData: {str(e)}')
                 
@@ -241,15 +255,21 @@ class SIRFViewerGUI(QMainWindow):
         filename, _ = QFileDialog.getOpenFileName(
             self, 'Load AcquisitionData', '', 'AcquisitionData files (*.hs);;All files (*)'
         )
-        
+
         if filename:
             try:
                 self.current_data = sirf.AcquisitionData(filename)
-                self.file_info_label.setText(f'Loaded: {os.path.basename(filename)}\nType: AcquisitionData')
-                self.setup_viewer()
-                self.statusBar().showMessage(f'Loaded AcquisitionData: {filename}')
+                self._load_and_setup_viewer(
+                    filename, '\nType: AcquisitionData', 'Loaded AcquisitionData: '
+                )
             except Exception as e:
                 QMessageBox.critical(self, 'Error', f'Failed to load AcquisitionData: {str(e)}')
+                self.current_data = None
+
+    def _load_and_setup_viewer(self, filename, arg1, arg2):
+        self.file_info_label.setText(f'Loaded: {os.path.basename(filename)}{arg1}')
+        self.setup_viewer()
+        self.statusBar().showMessage(f'{arg2}{filename}')
                 
     def setup_viewer(self):
         """Set up the viewer for the current data."""
@@ -259,19 +279,32 @@ class SIRFViewerGUI(QMainWindow):
         # Create viewer
         self.viewer = SIRFViewer(self.current_data, "SIRF Viewer")
         
+        # Populate view selection
+        available_views = self.viewer.get_available_views()
+        self.view_combo.clear()
+        self.view_combo.addItems(available_views)
+        
         # Set up dimension controls
         self.setup_dimension_controls()
-        
+
         # Enable controls
+        self.view_selection_group.setEnabled(True)
         self.view_group.setEnabled(True)
-        self.findChild(QGroupBox, "Animation").setEnabled(True)
-        self.findChild(QGroupBox, "Export").setEnabled(True)
+        self.anim_group.setEnabled(True)
+        self.export_group.setEnabled(True)
         
         # Initial display
         self.update_display()
-        
+            
+    def on_view_changed(self, view_name):
+        """Handle view selection change."""
+        if self.viewer is not None and view_name:
+            self.viewer.set_view(view_name)
+            self.setup_dimension_controls()  # Refresh controls for new view
+            self.update_display()
+            
     def setup_dimension_controls(self):
-        """Set up dimension control sliders based on data dimensions."""
+        """Set up dimension control sliders based on current view."""
         # Clear existing dimension widgets
         for widget in self.dimension_widgets:
             widget.setParent(None)
@@ -281,34 +314,18 @@ class SIRFViewerGUI(QMainWindow):
         if self.viewer is None:
             return
             
-        # Create sliders for scrollable dimensions
-        num_sliders = min(2, len(self.viewer.dimensions) - 2)
+        # Get current view configuration
+        view_config = self.viewer.available_views[self.viewer.current_view]
+        scroll_dim = view_config['scroll_dim']
+        other_dims = view_config.get('fixed_dims', [])
         
-        for i in range(num_sliders):
-            # Create slider
-            slider_layout = QHBoxLayout()
-            
-            label = QLabel(f'{self.viewer.dimension_names[i]}:')
-            slider_layout.addWidget(label)
-            
-            slider = QSlider(Qt.Horizontal)
-            slider.setRange(0, self.viewer.dimensions[i] - 1)
-            slider.setValue(self.viewer.current_indices[i])
-            slider.valueChanged.connect(lambda val, idx=i: self.update_dimension(idx, val))
-            slider_layout.addWidget(slider)
-            
-            # Value label
-            value_label = QLabel(str(self.viewer.current_indices[i]))
-            value_label.setMinimumWidth(30)
-            slider_layout.addWidget(value_label)
-            
-            # Add to layout
-            self.view_group.layout().insertLayout(
-                len(self.dimension_widgets), slider_layout
-            )
-            
-            self.dimension_widgets.extend([label, slider, value_label])
-            
+        # Create slider for main scrolling dimension
+        self.create_dimension_slider(scroll_dim, f"Scroll {self.viewer.dimension_names[scroll_dim]}")
+        
+        # Create sliders for other controllable dimensions
+        for dim_idx in other_dims:
+            self.create_dimension_slider(dim_idx, self.viewer.dimension_names[dim_idx])
+                
     def update_dimension(self, dim_idx: int, value: int):
         """Update a specific dimension."""
         if self.viewer is None:
@@ -322,6 +339,31 @@ class SIRFViewerGUI(QMainWindow):
             self.dimension_widgets[value_label_idx].setText(str(value))
             
         self.update_display()
+        
+    def create_dimension_slider(self, dim_idx, label):
+        """Create a slider for a specific dimension."""
+        slider_layout = QHBoxLayout()
+        
+        label_widget = QLabel(f'{label}:')
+        slider_layout.addWidget(label_widget)
+        
+        slider = QSlider(Qt.Horizontal)
+        slider.setRange(0, self.viewer.dimensions[dim_idx] - 1)
+        slider.setValue(self.viewer.current_indices[dim_idx])
+        slider.valueChanged.connect(lambda val, idx=dim_idx: self.update_dimension(idx, val))
+        slider_layout.addWidget(slider)
+        
+        # Value label
+        value_label = QLabel(str(self.viewer.current_indices[dim_idx]))
+        value_label.setMinimumWidth(30)
+        slider_layout.addWidget(value_label)
+        
+        # Add to layout
+        self.view_group.layout().insertLayout(
+            len(self.dimension_widgets) // 3, slider_layout
+        )
+        
+        self.dimension_widgets.extend([label_widget, slider, value_label])
         
     def update_display(self):
         """Update the display."""
@@ -339,10 +381,16 @@ class SIRFViewerGUI(QMainWindow):
         im = ax.imshow(slice_data, cmap=self.viewer.colormap, origin='lower')
         self.figure.colorbar(im, ax=ax)
         
-        # Update title
-        index_str = ', '.join([f'{name}: {idx}' 
-                             for name, idx in zip(self.viewer.dimension_names, self.viewer.current_indices)])
-        ax.set_title(f'Slice - {index_str}')
+        # Update title with current view info
+        view_config = self.viewer.available_views[self.viewer.current_view]
+        scroll_dim = view_config['scroll_dim']
+        title = f"{self.viewer.current_view} - {self.viewer.dimension_names[scroll_dim]}: {self.viewer.current_indices[scroll_dim]}"
+        ax.set_title(title)
+        
+        # Set axis labels
+        labels = view_config['labels']
+        ax.set_xlabel(labels[1])
+        ax.set_ylabel(labels[0])
         
         # Redraw canvas
         self.canvas.draw()
@@ -364,18 +412,21 @@ class SIRFViewerGUI(QMainWindow):
     def toggle_animation(self):
         """Toggle animation playback."""
         if self.animation_timer is None:
-            # Start animation
-            fps = self.fps_spin.value()
-            interval = 1000 // fps
-            self.animation_timer = QTimer()
-            self.animation_timer.timeout.connect(self.animation_step)
-            self.animation_timer.start(interval)
-            self.play_btn.setText('Pause')
+            self._start_animation()
         else:
             # Pause animation
             self.animation_timer.stop()
             self.animation_timer = None
             self.play_btn.setText('Play')
+
+    def _start_animation(self):
+        # Start animation
+        fps = self.fps_spin.value()
+        interval = 1000 // fps
+        self.animation_timer = QTimer()
+        self.animation_timer.timeout.connect(self.animation_step)
+        self.animation_timer.start(interval)
+        self.play_btn.setText('Pause')
             
     def stop_animation(self):
         """Stop animation and reset to first frame."""

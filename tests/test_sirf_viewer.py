@@ -17,10 +17,15 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from sirf_viewer.viewers import SIRFViewer, NotebookViewer
-from sirf_viewer.utils import (get_data_info, validate_sirf_data, 
-                              get_optimal_window_level, create_thumbnail)
-from sirf_viewer.widgets import (SIRFImageViewerWidget, SIRFAcquisitionViewerWidget,
-                                DimensionControlWidget, AnimationControlWidget)
+from sirf_viewer.utils import (
+    get_data_info, validate_sirf_data, 
+    get_optimal_window_level, create_thumbnail
+)
+from sirf_viewer.widgets import (
+    DisplayOptionsWidget,
+    DimensionControlWidget, 
+    AnimationControlWidget
+)
 
 
 class MockSIRFData:
@@ -222,37 +227,22 @@ class TestWidgets(unittest.TestCase):
     def test_dimension_control_widget(self):
         """Test DimensionControlWidget."""
         with patch('sirf_viewer.widgets.PYQT_AVAILABLE', True):
-            from PyQt5.QtWidgets import QApplication
-            import sys
-            
-            # Create QApplication if it doesn't exist
-            if not QApplication.instance():
-                app = QApplication(sys.argv)
-            else:
-                app = QApplication.instance()
-                
+            self.safe_import_QApp()
             widget = DimensionControlWidget()
             widget.set_dimensions([10, 20, 30], ['z', 'y', 'x'])
-            
+
             self.assertEqual(len(widget.sliders), 3)
             self.assertEqual(widget.get_dimension_values(), [5, 10, 15])  # Middle values
             
     def test_animation_control_widget(self):
         """Test AnimationControlWidget."""
         with patch('sirf_viewer.widgets.PYQT_AVAILABLE', True):
-            from PyQt5.QtWidgets import QApplication
-            import sys
-            
-            if not QApplication.instance():
-                app = QApplication(sys.argv)
-            else:
-                app = QApplication.instance()
-                
+            self.safe_import_QApp()
             widget = AnimationControlWidget()
-            
+
             self.assertEqual(widget.get_fps(), 10)
             self.assertTrue(widget.get_loop_enabled())
-            
+
             # Test FPS change
             widget.fps_spin.setValue(20)
             self.assertEqual(widget.get_fps(), 20)
@@ -260,28 +250,29 @@ class TestWidgets(unittest.TestCase):
     def test_display_options_widget(self):
         """Test DisplayOptionsWidget."""
         with patch('sirf_viewer.widgets.PYQT_AVAILABLE', True):
-            from PyQt5.QtWidgets import QApplication
-            import sys
-            
-            if not QApplication.instance():
-                app = QApplication(sys.argv)
-            else:
-                app = QApplication.instance()
-                
+            self.safe_import_QApp()
             widget = DisplayOptionsWidget()
-            
+
             self.assertEqual(widget.get_colormap(), 'gray')
             self.assertEqual(widget.get_window(), 1000)
             self.assertEqual(widget.get_level(), 0)
-            
+
             # Test colormap change
             widget.set_colormap('viridis')
             self.assertEqual(widget.get_colormap(), 'viridis')
-            
+
             # Test window/level change
             widget.set_window_level(500, 100)
             self.assertEqual(widget.get_window(), 500)
             self.assertEqual(widget.get_level(), 100)
+
+    def safe_import_QApp(self):
+        from PyQt5.QtWidgets import QApplication
+        import sys
+        if not QApplication.instance():
+            app = QApplication(sys.argv)
+        else:
+            app = QApplication.instance()
 
 
 if __name__ == '__main__':

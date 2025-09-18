@@ -60,103 +60,99 @@ def create_mock_acquisition_data():
 def example_image_data_viewer():
     """Example of using SIRFViewer with ImageData."""
     print("=== ImageData Viewer Example ===")
-    
+
     # Create or load ImageData
     if SIRF_AVAILABLE:
         # In real usage, you would load from file:
         # image_data = sirf.ImageData('path/to/your/image.hv')
         print("SIRF available - in real usage, load ImageData from .hv file")
-        image_data = create_mock_image_data()
     else:
         print("Using mock ImageData for demonstration")
-        image_data = create_mock_image_data()
-    
+    image_data = create_mock_image_data()
     # Create viewer
     viewer = SIRFViewer(image_data, "My Image Data")
-    
+
     # Print data info
     from sirf_viewer.utils import get_data_info, print_data_info
     print_data_info(image_data)
-    
+
     # Set different colormaps
     print("\nTrying different colormaps...")
     for colormap in ['gray', 'viridis', 'plasma']:
         viewer.set_colormap(colormap)
         print(f"  Set colormap to: {colormap}")
-    
+
     # Set window/level
     print("\nSetting window/level...")
     level, width = 500, 1000
     viewer.set_window(level, width)
     print(f"  Set window: {width}, level: {level}")
-    
+
     # Save current view
     print("\nSaving current view...")
     save_view_as_image(image_data, 'example_image_slice.png', 
                       indices=[10, 64, 64], colormap='viridis')
     print("  Saved to: example_image_slice.png")
-    
+
     # Create GIF animation
     print("\nCreating GIF animation...")
     create_gif_from_data(image_data, 'example_image_animation.gif', 
                        fps=5, dimensions=[0])
     print("  Created: example_image_animation.gif")
-    
+
     print("\nTo display the viewer interactively, call:")
     print("  viewer.show()")
     print("(This would open a matplotlib window)")
-    
+
     return viewer
 
 
 def example_acquisition_data_viewer():
     """Example of using SIRFViewer with AcquisitionData."""
     print("\n=== AcquisitionData Viewer Example ===")
-    
+
     # Create or load AcquisitionData
     if SIRF_AVAILABLE:
         # In real usage, you would load from file:
         # acq_data = sirf.AcquisitionData('path/to/your/data.hs')
         print("SIRF available - in real usage, load AcquisitionData from .hs file")
-        acq_data = create_mock_acquisition_data()
     else:
         print("Using mock AcquisitionData for demonstration")
-        acq_data = create_mock_acquisition_data()
-    
+    acq_data = create_mock_acquisition_data()
     # Create viewer
     viewer = SIRFViewer(acq_data, "My Acquisition Data")
-    
+
     # Print data info
     from sirf_viewer.utils import get_data_info, print_data_info
     print_data_info(acq_data)
-    
+
     # Navigate through different dimensions
     print("\nNavigating through dimensions...")
-    
+
     # Change ToF bin
     viewer.current_indices[0] = 2
     print(f"  Set ToF bin to: {viewer.current_indices[0]}")
-    
+
     # Change view
     viewer.current_indices[1] = 8
     print(f"  Set view to: {viewer.current_indices[1]}")
-    
+
     # Save current view
     print("\nSaving current view...")
     save_view_as_image(acq_data, 'example_acquisition_slice.png', 
                       indices=[2, 8, 32, 32], colormap='plasma')
     print("  Saved to: example_acquisition_slice.png")
-    
+
     # Create GIF animation (animate through ToF bins)
     print("\nCreating GIF animation...")
     create_gif_from_data(acq_data, 'example_acquisition_animation.gif', 
                        fps=3, dimensions=[0])
     print("  Created: example_acquisition_animation.gif")
-    
+
     print("\nTo display the viewer interactively, call:")
     print("  viewer.show()")
     print("(This would open a matplotlib window)")
-    
+
     return viewer
 
 
@@ -240,26 +236,27 @@ def main():
     """Run all examples."""
     print("SIRF Viewer - Basic Usage Examples")
     print("=" * 40)
-    
+
     try:
-        # Run examples
-        image_viewer = example_image_data_viewer()
-        acq_viewer = example_acquisition_data_viewer()
-        notebook_viewer = example_notebook_viewer()
-        example_batch_processing()
-        
-        print("\n" + "=" * 40)
-        print("All examples completed successfully!")
-        print("\nGenerated files:")
-        print("  - example_image_slice.png")
-        print("  - example_image_animation.gif")
-        print("  - example_acquisition_slice.png")
-        print("  - example_acquisition_animation.gif")
-        
+        run_examples()
     except Exception as e:
         print(f"\nError running examples: {e}")
         import traceback
         traceback.print_exc()
+
+def run_examples():
+    image_viewer = example_image_data_viewer()
+    acq_viewer = example_acquisition_data_viewer()
+    notebook_viewer = example_notebook_viewer()
+    example_batch_processing()
+
+    print("\n" + "=" * 40)
+    print("All examples completed successfully!")
+    print("\nGenerated files:")
+    print("  - example_image_slice.png")
+    print("  - example_image_animation.gif")
+    print("  - example_acquisition_slice.png")
+    print("  - example_acquisition_animation.gif")
 
 
 if __name__ == '__main__':

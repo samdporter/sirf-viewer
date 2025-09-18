@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sirf-viewer"
+description = "A GUI and Python interface for viewing SIRF ImageData and AcquisitionData"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "SIRF Viewer Team", email = "sirf-viewer@example.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Healthcare Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+dependencies = [
+    "numpy>=1.20.0",
+    "matplotlib>=3.3.0",
+    "PyQt5>=5.15.0",
+    "pillow>=8.0.0",
+    "scipy>=1.7.0",
+    "tifffile>=2021.0.0",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0.0",
+    "pytest-cov>=2.0.0",
+    "black>=21.0.0",
+    "flake8>=3.8.0",
+    "mypy>=0.900",
+    "sphinx>=4.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+notebook = [
+    "jupyter>=1.0.0",
+    "ipywidgets>=7.0.0",
+    "ipython>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/sirf-viewer/sirf-viewer"
+Documentation = "https://sirf-viewer.readthedocs.io"
+Repository = "https://github.com/sirf-viewer/sirf-viewer"
+"Bug Tracker" = "https://github.com/sirf-viewer/sirf-viewer/issues"
+
+[project.scripts]
+sirf-viewer = "sirf_viewer.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+write_to = "src/sirf_viewer/_version.py"

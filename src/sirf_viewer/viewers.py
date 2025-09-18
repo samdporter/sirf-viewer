@@ -45,22 +45,109 @@ class SIRFViewer:
             
         self.data = data
         self.title = title
-        self.current_indices = [0] * self._get_num_dimensions()
         self.colormap = 'gray'
         self.window_level = None
         self.window_width = None
         
-        # Get data array and dimensions
+        # Get data array and dimensions FIRST
         self.data_array = self._get_data_array()
         self.dimensions = self._get_dimensions()
         self.dimension_names = self._get_dimension_names()
+        
+        # Set initial indices to middle of each dimension
+        self.current_indices = [dim // 2 for dim in self.dimensions]
+        
+        # NEW: View selection for different slice orientations
+        self.available_views = self._get_available_views()
+        self.current_view = list(self.available_views.keys())[0]  # Default to first available view
         
         # Set up the figure and plot
         self.fig = None
         self.ax = None
         self.im = None
         self.sliders = []
+        self.view_buttons = []
+        
         self.setup_plot()
+        
+    def _get_available_views(self) -> dict:
+        """Get available view orientations based on data type and dimensions."""
+        views = {}
+        
+        if len(self.dimensions) == 3:  # ImageData
+            views = {
+                'Axial (Z-Y-X)': {
+                    'scroll_dim': 0,  # Scroll through Z
+                    'display_dims': (1, 2),  # Show Y-X plane
+                    'labels': ('Y', 'X')
+                },
+                'Coronal (Y-Z-X)': {
+                    'scroll_dim': 1,  # Scroll through Y
+                    'display_dims': (0, 2),  # Show Z-X plane
+                    'labels': ('Z', 'X')
+                },
+                'Sagittal (X-Z-Y)': {
+                    'scroll_dim': 2,  # Scroll through X
+                    'display_dims': (0, 1),  # Show Z-Y plane
+                    'labels': ('Z', 'Y')
+                }
+            }
+        elif len(self.dimensions) == 4:  # AcquisitionData: (ToF bin, view, axial, tangential)
+            views = {
+                'Axial-Tangential': {
+                    'scroll_dim': 0,  # Primary: Scroll through ToF bins
+                    'display_dims': (1, 3),  # Show Axial vs Tangential
+                    'labels': ('Axial', 'Tangential'),
+                    'fixed_dims': [2]  # Secondary scroller: Axial position
+                },
+                'View-Tangential (Sinogram)': {
+                    'scroll_dim': 0,  # Primary: Scroll through ToF bins
+                    'display_dims': (2, 3),  # Show View vs Tangential  
+                    'labels': ('View', 'Tangential'),
+                    'fixed_dims': [1]  # Secondary scroller: View angle
+                },
+                'View-Axial': {
+                    'scroll_dim': 0,  # Primary: Scroll through ToF bins
+                    'display_dims': (1, 2),  # Show View vs Axial
+                    'labels': ('View', 'Axial'), 
+                    'fixed_dims': [3]  # Secondary scroller: Tangential position
+                }
+            }
+        
+        return views
+        
+    def get_available_views(self) -> list:
+        """Get list of available view names."""
+        return list(self.available_views.keys())
+    
+    def set_view(self, view_name: str):
+        """Set the current view orientation."""
+        if view_name in self.available_views:
+            self.current_view = view_name
+            self._update_display()
+            self._update_sliders()
+        else:
+            available = list(self.available_views.keys())
+            raise ValueError(f"View '{view_name}' not available. Available views: {available}")
+        
+    def _add_view_controls(self):
+        """Add view selection controls to the plot."""
+        # Add view selection buttons
+        view_names = list(self.available_views.keys())
+        button_width = 0.15
+        button_height = 0.04
+        start_x = 0.1
+        
+        for i, view_name in enumerate(view_names):
+            ax_button = plt.axes([start_x + i * (button_width + 0.01), 0.02, button_width, button_height])
+            button = Button(ax_button, view_name.split('(')[0])  # Short name
+            button.on_clicked(lambda event, view=view_name: self._on_view_change(view))
+            self.view_buttons.append(button)
+
+    def _on_view_change(self, view_name: str):
+        """Handle view change button click."""
+        self.set_view(view_name)
+        print(f"Switched to {view_name} view")
         
     def _get_data_array(self) -> np.ndarray:
         """Get numpy array from SIRF data object."""
@@ -95,62 +182,86 @@ class SIRFViewer:
         
     def setup_plot(self):
         """Set up the matplotlib figure and initial plot."""
-        self.fig, self.ax = plt.subplots(figsize=(10, 8))
+        self.fig, self.ax = plt.subplots(figsize=(12, 8))
         self.fig.suptitle(self.title)
-        
-        # Initial display (show middle slices)
-        self.current_indices = [dim // 2 for dim in self.dimensions]
         
         # Display initial slice
         self._update_display()
         
-        # Add sliders for dimensions > 2
+        # Add sliders for current view
         self._add_sliders()
         
-        # Add controls
+        # Add view selection controls
+        self._add_view_controls()
+        
+        # Add other controls
         self._add_controls()
         
     def _update_display(self):
-        """Update the display based on current indices."""
+        """Update the display based on current indices and view."""
         # Get the current slice
         slice_data = self._get_current_slice()
-        
+
         # Apply window/level if set
         if self.window_level is not None and self.window_width is not None:
             slice_data = self._apply_window_level(slice_data)
-            
+
         # Clear and redraw
         self.ax.clear()
-        
+
         if self.im is None:
             self.im = self.ax.imshow(slice_data, cmap=self.colormap, origin='lower')
             self.fig.colorbar(self.im, ax=self.ax)
         else:
             self.im.set_array(slice_data)
             self.im.set_cmap(self.colormap)
-            
-        # Update title with current indices
-        index_str = ', '.join([f'{name}: {idx}' 
-                             for name, idx in zip(self.dimension_names, self.current_indices)])
-        self.ax.set_title(f'Slice - {index_str}')
-        
+
+        # Update title with current view and indices
+        view_config = self.available_views[self.current_view]
+        scroll_dim = view_config['scroll_dim']
+        labels = view_config['labels']
+
+        title_parts = [
+            f"{self.current_view}",
+            f"{self.dimension_names[scroll_dim]}: {self.current_indices[scroll_dim]}",
+        ]
+        self.ax.set_title(' - '.join(title_parts))
+        self.ax.set_xlabel(labels[1])  # X-axis label
+        self.ax.set_ylabel(labels[0])  # Y-axis label
+
         self.fig.canvas.draw()
         
+    def _update_sliders(self):
+        """Update slider ranges and values when view changes."""
+        # Clear existing sliders
+        for slider in self.sliders:
+            slider.ax.remove()
+        self.sliders = []
+        
+        # Recreate sliders for new view
+        self._add_sliders()
+        
     def _get_current_slice(self) -> np.ndarray:
-        """Get the current 2D slice based on indices."""
-        # For 3D data (ImageData), show x-y slice at current z
-        if len(self.dimensions) == 3:
-            return self.data_array[self.current_indices[0], :, :]
-        # For 4D data (AcquisitionData), show last 2 dimensions at current first 2 indices
-        elif len(self.dimensions) == 4:
-            return self.data_array[self.current_indices[0], self.current_indices[1], :, :]
-        else:
-            # For other dimensionalities, try to show last 2 dimensions
-            if len(self.dimensions) >= 2:
-                indices = self.current_indices[:-2] + [slice(None), slice(None)]
-                return self.data_array[tuple(indices)]
+        """Get the current 2D slice based on selected view."""
+        view_config = self.available_views[self.current_view]
+        scroll_dim = view_config['scroll_dim']
+        display_dims = view_config['display_dims']
+
+        # Build indexing tuple
+        indices = []
+        for i in range(len(self.dimensions)):
+            if i == scroll_dim or i not in display_dims:
+                indices.append(self.current_indices[i])
             else:
-                return self.data_array
+                indices.append(slice(None))
+        slice_data = self.data_array[tuple(indices)]
+
+        # Ensure we have a 2D array
+        if slice_data.ndim > 2:
+            # Squeeze out singleton dimensions
+            slice_data = np.squeeze(slice_data)
+
+        return slice_data
                 
     def _apply_window_level(self, data: np.ndarray) -> np.ndarray:
         """Apply window/level to the data."""
@@ -159,33 +270,46 @@ class SIRFViewer:
         return np.clip(data, min_val, max_val)
         
     def _add_sliders(self):
-        """Add sliders for dimensions greater than 2."""
+        """Add sliders for the scrollable dimension based on current view."""
         # Clear existing sliders
         for slider in self.sliders:
             slider.ax.remove()
         self.sliders = []
         
-        # Add sliders for dimensions that can be scrolled
-        # For 3D data: add slider for z dimension
-        # For 4D data: add sliders for first 2 dimensions
-        num_sliders = min(2, len(self.dimensions) - 2)
+        # Get current view configuration
+        view_config = self.available_views[self.current_view]
+        scroll_dim = view_config['scroll_dim']
         
-        if num_sliders > 0:
-            # Adjust subplot to make room for sliders
-            plt.subplots_adjust(bottom=0.25)
-            
-            for i in range(num_sliders):
-                ax_slider = plt.axes([0.2, 0.15 - i * 0.05, 0.6, 0.03])
-                slider = Slider(
-                    ax_slider, 
-                    self.dimension_names[i], 
-                    0, 
-                    self.dimensions[i] - 1, 
-                    valinit=self.current_indices[i], 
-                    valfmt='%d'
-                )
-                slider.on_changed(self._on_slider_change)
-                self.sliders.append(slider)
+        # Adjust subplot to make room for sliders and buttons
+        plt.subplots_adjust(bottom=0.25)
+        
+        # Add slider for the scrollable dimension
+        ax_slider = plt.axes([0.2, 0.15, 0.6, 0.03])
+        slider = Slider(
+            ax_slider, 
+            self.dimension_names[scroll_dim], 
+            0, 
+            self.dimensions[scroll_dim] - 1, 
+            valinit=self.current_indices[scroll_dim], 
+            valfmt='%d'
+        )
+        slider.on_changed(lambda val: self._on_slider_change(scroll_dim, val))
+        self.sliders.append(slider)
+        
+        # Add sliders for other controllable dimensions if they exist
+        other_dims = view_config.get('fixed_dims', [])
+        for i, dim_idx in enumerate(other_dims):
+            ax_slider = plt.axes([0.2, 0.10 - i * 0.04, 0.6, 0.03])
+            slider = Slider(
+                ax_slider, 
+                self.dimension_names[dim_idx], 
+                0, 
+                self.dimensions[dim_idx] - 1, 
+                valinit=self.current_indices[dim_idx], 
+                valfmt='%d'
+            )
+            slider.on_changed(lambda val, idx=dim_idx: self._on_slider_change(idx, val))
+            self.sliders.append(slider)
                 
     def _add_controls(self):
         """Add control buttons."""
@@ -204,10 +328,9 @@ class SIRFViewer:
         btn_gif = Button(ax_gif, 'Create GIF')
         btn_gif.on_clicked(self._on_gif_click)
         
-    def _on_slider_change(self, val):
-        """Handle slider value changes."""
-        for i, slider in enumerate(self.sliders):
-            self.current_indices[i] = int(slider.val)
+    def _on_slider_change(self, dim_idx: int, val: float):
+        """Handle slider value changes for a specific dimension."""
+        self.current_indices[dim_idx] = int(val)
         self._update_display()
         
     def _on_colormap_click(self, event):
@@ -378,11 +501,10 @@ class NotebookViewer:
         elif len(self.dimensions) == 4:
             return self.data_array[self.current_indices[0], self.current_indices[1], :, :]
         else:
-            if len(self.dimensions) >= 2:
-                indices = self.current_indices[:-2] + [slice(None), slice(None)]
-                return self.data_array[tuple(indices)]
-            else:
+            if len(self.dimensions) < 2:
                 return self.data_array
+            indices = self.current_indices[:-2] + [slice(None), slice(None)]
+            return self.data_array[tuple(indices)]
                 
     def _update_plot(self, *args):
         """Update the plot when controls change."""
