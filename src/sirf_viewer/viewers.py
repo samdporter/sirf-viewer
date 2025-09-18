@@ -5,6 +5,8 @@ Viewer classes for SIRF ImageData and AcquisitionData objects.
 This module provides the main viewer classes for both GUI and notebook usage.
 """
 
+
+import contextlib
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
@@ -33,25 +35,29 @@ class SIRFViewer:
     def __init__(self, data: Any, title: str = "SIRF Viewer"):
         if not SIRF_AVAILABLE:
             raise ImportError("SIRF package is required. Install with: pip install sirf")
-            
+
         self.data = data
         self.title = title
         self.colormap = 'gray'
         self.window_level = None
         self.window_width = None
-        
+
         # Get data array and dimensions
         self.data_array = self._get_data_array()
         self.dimensions = self._get_dimensions()
         self.dimension_names = self._get_dimension_names()
-        
+
+        self.voxel_sizes = None
+        if hasattr(self.data, 'voxel_sizes'):
+            with contextlib.suppress(Exception):
+                self.voxel_sizes = self.data.voxel_sizes()  # (z_size, y_size, x_size)
         # Set initial indices to middle of each dimension
         self.current_indices = [dim // 2 for dim in self.dimensions]
-        
+
         # View system
         self.available_views = self._get_available_views()
         self.current_view = list(self.available_views.keys())[0]
-        
+
         # Matplotlib objects
         self.fig = None
         self.ax = None
@@ -175,9 +181,19 @@ class SIRFViewer:
 
         # Clear the axes
         self.ax.clear()
+        
+        aspect = 'equal'  # default
+        if self.voxel_sizes is not None and len(self.dimensions) == 3:
+            vz, vy, vx = self.voxel_sizes
+            if self.current_view == 'Axial':        # y-x plane
+                aspect = vy / vx
+            elif self.current_view == 'Coronal':    # z-x plane
+                aspect = vz / vx
+            elif self.current_view == 'Sagittal':   # z-y plane
+                aspect = vz / vy
 
         # Display the image
-        self.im = self.ax.imshow(slice_data, cmap=self.colormap, origin='lower')
+        self.im = self.ax.imshow(slice_data, cmap=self.colormap, origin='lower', aspect=aspect)
 
         # Add colorbar if it doesn't exist or update it
         if self.colorbar is None:
@@ -220,10 +236,10 @@ class SIRFViewer:
             if self.current_view == 'Axial':
                 return self.data_array[indices[0], :, :]
             elif self.current_view == 'Coronal':
-                return self.data_array[:, indices[1], :].T  # Transpose for proper orientation
+                return self.data_array[:, indices[1], :]
             elif self.current_view == 'Sagittal':
-                return self.data_array[:, :, indices[2]].T  # Transpose for proper orientation
-                
+                return self.data_array[:, :, indices[2]]
+
         elif len(self.dimensions) == 4:  # AcquisitionData
             # For 4D data, we need to specify all non-display dimensions
             if display_dims == (2, 3):  # Radial-Axial
@@ -408,8 +424,8 @@ class SIRFViewer:
             # Apply window/level if set
             if self.window_level is not None and self.window_width is not None:
                 slice_data = self._apply_window_level(slice_data)
-                
-            im = ax.imshow(slice_data, cmap=self.colormap, origin='lower')
+
+            im = ax.imshow(slice_data, cmap=self.colormap, origin='upper')
             ax.set_title(f'{self.current_view} - {self.dimension_names[dim_to_animate]}: {frame}')
             return [im]
             
@@ -430,24 +446,30 @@ class NotebookViewer:
     def __init__(self, data: Any, width: int = 800, height: int = 600):
         if not SIRF_AVAILABLE:
             raise ImportError("SIRF package is required. Install with: pip install sirf")
-            
+
         self.data = data
         self.width = width
         self.height = height
-        
+
         # Get data array and dimensions
         self.data_array = self._get_data_array()
         self.dimensions = self._get_dimensions()
         self.dimension_names = self._get_dimension_names()
         
+        # Voxel sizes if available
+        self.voxel_sizes = None
+        if hasattr(self.data, 'voxel_sizes'):
+            with contextlib.suppress(Exception):
+                self.voxel_sizes = self.data.voxel_sizes()  # (z_size, y_size, x_size)
+
         # Current state
         self.current_indices = [dim // 2 for dim in self.dimensions]
         self.colormap = 'gray'
-        
+
         # View system
         self.available_views = self._get_available_views()
         self.current_view = list(self.available_views.keys())[0]
-        
+
         # Check for ipywidgets
         try:
             import ipywidgets as widgets
@@ -459,13 +481,13 @@ class NotebookViewer:
         except ImportError:
             self.widgets_available = False
             warnings.warn("ipywidgets not available. Install with: pip install ipywidgets")
-            
+
     def _get_data_array(self) -> np.ndarray:
         """Get numpy array from SIRF data object."""
         try:
             return self.data.asarray()
-        except AttributeError:
-            raise AttributeError("Data object must have asarray() method")
+        except AttributeError as e:
+            raise AttributeError("Data object must have asarray() method") from e
             
     def _get_dimensions(self) -> Tuple[int, ...]:
         """Get dimensions of the data."""
@@ -510,19 +532,19 @@ class NotebookViewer:
             }
         elif len(self.dimensions) == 4:  # AcquisitionData (tof, view, radial, axial)
             views = {
-                'Radial-Axial': {
+                'Rad-Ax': {
                     'scroll_dim': 0,  # Primary: ToF bins
                     'display_dims': (2, 3),  # Show radial-axial plane
                     'labels': ('Radial', 'Axial'),
                     'controllable_dims': [1]  # Also control view
                 },
-                'View-Axial (Sinogram)': {
+                'View-Ax (Sinogram)': {
                     'scroll_dim': 0,  # Primary: ToF bins
                     'display_dims': (1, 3),  # Show view-axial plane
                     'labels': ('View', 'Axial'),
                     'controllable_dims': [2]  # Also control radial
                 },
-                'View-Radial': {
+                'View-Rad': {
                     'scroll_dim': 0,  # Primary: ToF bins
                     'display_dims': (1, 2),  # Show view-radial plane
                     'labels': ('View', 'Radial'),
@@ -541,10 +563,10 @@ class NotebookViewer:
             if self.current_view == 'Axial':
                 return self.data_array[indices[0], :, :]
             elif self.current_view == 'Coronal':
-                return self.data_array[:, indices[1], :].T
+                return self.data_array[:, indices[1], :]
             elif self.current_view == 'Sagittal':
-                return self.data_array[:, :, indices[2]].T
-                
+                return self.data_array[:, :, indices[2]]
+
         elif len(self.dimensions) == 4:  # AcquisitionData
             display_dims = view_config['display_dims']
             if display_dims == (2, 3):  # Radial-Axial
@@ -569,10 +591,7 @@ class NotebookViewer:
         
     def _show_static(self):
         """Show static matplotlib display as fallback."""
-        plt.figure(figsize=(self.width/100, self.height/100))
-        slice_data = self._get_current_slice()
-        plt.imshow(slice_data, cmap=self.colormap, origin='lower')
-        plt.colorbar()
+        self._plot_slice_with_colorbar()
         plt.title(self._get_title())
         plt.show()
         
@@ -677,18 +696,31 @@ class NotebookViewer:
         """Update the interactive plot."""
         with self.output:
             self.output.clear_output(wait=True)
-            
-            plt.figure(figsize=(self.width/100, self.height/100))
-            slice_data = self._get_current_slice()
-            plt.imshow(slice_data, cmap=self.colormap, origin='lower')
-            plt.colorbar()
-            
+
+            self._plot_slice_with_colorbar()
             view_config = self.available_views[self.current_view]
             labels = view_config['labels']
             plt.xlabel(labels[1])
             plt.ylabel(labels[0])
             plt.title(self._get_title())
             plt.show()
+
+    def _plot_slice_with_colorbar(self):
+        plt.figure(figsize=(self.width / 100, self.height / 100))
+        slice_data = self._get_current_slice()
+        
+        aspect = 'equal'  # default
+        if self.voxel_sizes is not None and len(self.dimensions) == 3:
+            vz, vy, vx = self.voxel_sizes
+            if self.current_view == 'Axial':        # y-x plane
+                aspect = vy / vx
+            elif self.current_view == 'Coronal':    # z-x plane  
+                aspect = vz / vx
+            elif self.current_view == 'Sagittal':   # z-y plane
+                aspect = vz / vy
+
+        plt.imshow(slice_data, cmap=self.colormap, origin='upper', aspect=aspect)
+        plt.colorbar()
             
     def _get_title(self):
         """Get title string with current view and indices."""
