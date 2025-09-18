@@ -1,263 +1,271 @@
-# examples/basic_usage.py
+#!/usr/bin/env python3
 """
-Basic usage examples for SIRF viewer.
+Example demonstrating view switching functionality.
 
-This script demonstrates how to use the SIRF viewer package with both
-ImageData and AcquisitionData objects.
+This shows how to use the view switching features in both SIRFViewer and NotebookViewer.
 """
 
 import numpy as np
 import sys
 import os
 
-# Add the src directory to the path so we can import sirf_viewer
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+from sirf_viewer import SIRFViewer, NotebookViewer
 
-try:
-    import sirf.STIR as sirf
-    SIRF_AVAILABLE = True
-except ImportError:
-    SIRF_AVAILABLE = False
-    print("Warning: SIRF not available. Using mock data for demonstration.")
+# create output directory in current folder
+output_dir =  os.path.join(os.path.dirname(__file__),'output')
+if not os.path.exists(output_dir):
+    os.makedirs(output_dir)
+os.chdir(output_dir)
 
-from sirf_viewer import SIRFViewer, NotebookViewer, create_gif_from_data, save_view_as_image
-
-
-def create_mock_image_data():
-    """Create mock ImageData for demonstration."""
-    class MockImageData:
-        def __init__(self, shape):
-            self.shape = shape
-            self._data = np.random.rand(*shape) * 1000
-            
-        def asarray(self):
-            return self._data
-            
-        @property
-        def __class__(self):
-            return type('ImageData', (), {'__name__': 'ImageData'})
+# Create mock data
+class MockSIRFData:
+    """Mock SIRF data object for testing view switching."""
     
-    return MockImageData((20, 128, 128))
+    def __init__(self, shape, class_name='ImageData'):
+        self.shape = shape
+        self._class_name = class_name
+        if class_name == 'ImageData':
+            self._data = self._create_anatomical_image_data(shape)
+        else:
+            self._data = self._create_structured_acquisition_data(shape)
+        
+    @property
+    def __class__(self):
+        return type(self._class_name, (), {'__name__': self._class_name})
+        
+    def asarray(self):
+        return self._data
+        
+    def _create_anatomical_image_data(self, shape):
+        """Create anatomical-like test data with clear directional features."""
+        z, y, x = shape
+        data = np.zeros((z, y, x))
+        
+        center_z, center_y, center_x = z//2, y//2, x//2
+        
+        # Create different features that will look different in each view
+        for iz in range(z):
+            for iy in range(y):
+                for ix in range(x):
+                    # Background noise
+                    noise = np.random.normal(0, 20)
+                    
+                    # Axial feature (circular in axial view)
+                    axial_dist = np.sqrt((iy - center_y)**2 + (ix - center_x)**2)
+                    axial_feature = 500 * np.exp(-axial_dist**2 / 800) if axial_dist < 40 else 0
+                    
+                    # Sagittal feature (vertical stripe in sagittal view)
+                    sagittal_feature = 300 * np.exp(-((iz - center_z)**2 + (iy - center_y + 20)**2) / 200)
+                    
+                    # Coronal feature (horizontal stripe in coronal view)
+                    coronal_feature = 400 * np.exp(-((iz - center_z + 15)**2 + (ix - center_x)**2) / 300)
+                    
+                    # Z-variation
+                    z_factor = 1.0 + 0.3 * np.sin(2 * np.pi * iz / z)
+                    
+                    data[iz, iy, ix] = noise + z_factor * (axial_feature + sagittal_feature + coronal_feature)
+                    
+        return np.maximum(data, 0)  # Ensure non-negative
+        
+    def _create_structured_acquisition_data(self, shape):
+        """Create structured acquisition data with clear features."""
+        tof, views, radial, axial = shape
+        data = np.zeros((tof, views, radial, axial))
+        
+        for t in range(tof):
+            for v in range(views):
+                for r in range(radial):
+                    for a in range(axial):
+                        # Background noise
+                        noise = np.random.normal(0, 5)
+                        
+                        # Sinogram-like pattern
+                        angle = v * np.pi / views
+                        center_r, center_a = radial//2, axial//2
+                        
+                        # Create projection features
+                        sino_feature = 100 * np.exp(-((r - center_r)**2 + (a - center_a)**2) / 100)
+                        
+                        # View-dependent variation
+                        view_variation = 50 * np.sin(2 * angle) * np.exp(-(r - center_r)**2 / 200)
+                        
+                        # ToF variation
+                        tof_factor = np.exp(-t / 3) if t > 0 else 1.0
+                        
+                        data[t, v, r, a] = noise + tof_factor * (sino_feature + view_variation)
+                        
+        return np.maximum(data, 0)
 
 
-def create_mock_acquisition_data():
-    """Create mock AcquisitionData for demonstration."""
-    class MockAcquisitionData:
-        def __init__(self, shape):
-            self.shape = shape
-            self._data = np.random.rand(*shape) * 500
-            
-        def asarray(self):
-            return self._data
-            
-        @property
-        def __class__(self):
-            return type('AcquisitionData', (), {'__name__': 'AcquisitionData'})
+def demo_imagedata_views():
+    """Demonstrate view switching with ImageData."""
+    print("=== ImageData View Switching Demo ===")
     
-    return MockAcquisitionData((8, 16, 64, 64))
-
-
-def example_image_data_viewer():
-    """Example of using SIRFViewer with ImageData."""
-    print("=== ImageData Viewer Example ===")
-
-    # Create or load ImageData
-    if SIRF_AVAILABLE:
-        # In real usage, you would load from file:
-        # image_data = sirf.ImageData('path/to/your/image.hv')
-        print("SIRF available - in real usage, load ImageData from .hv file")
-    else:
-        print("Using mock ImageData for demonstration")
-    image_data = create_mock_image_data()
+    # Create anatomical-like test data
+    image_data = MockSIRFData((30, 100, 100), 'ImageData')
+    print(f"Created ImageData with shape: {image_data.shape}")
+    
     # Create viewer
-    viewer = SIRFViewer(image_data, "My Image Data")
-
-    # Print data info
-    from sirf_viewer.utils import get_data_info, print_data_info
-    print_data_info(image_data)
-
-    # Set different colormaps
-    print("\nTrying different colormaps...")
-    for colormap in ['gray', 'viridis', 'plasma']:
-        viewer.set_colormap(colormap)
-        print(f"  Set colormap to: {colormap}")
-
-    # Set window/level
-    print("\nSetting window/level...")
-    level, width = 500, 1000
-    viewer.set_window(level, width)
-    print(f"  Set window: {width}, level: {level}")
-
-    # Save current view
-    print("\nSaving current view...")
-    save_view_as_image(image_data, 'example_image_slice.png', 
-                      indices=[10, 64, 64], colormap='viridis')
-    print("  Saved to: example_image_slice.png")
-
-    # Create GIF animation
-    print("\nCreating GIF animation...")
-    create_gif_from_data(image_data, 'example_image_animation.gif', 
-                       fps=5, dimensions=[0])
-    print("  Created: example_image_animation.gif")
-
-    print("\nTo display the viewer interactively, call:")
-    print("  viewer.show()")
-    print("(This would open a matplotlib window)")
-
+    viewer = SIRFViewer(image_data, "ImageData View Switching Demo")
+    
+    print("\nAvailable views:")
+    for view in viewer.get_available_views():
+        print(f"  - {view}")
+    
+    print("\nThe interactive viewer will have:")
+    print("  - Buttons to switch between Axial, Coronal, and Sagittal views")
+    print("  - Sliders that adapt to each view")
+    print("  - Different slice orientations for each view")
+    
+    # Demonstrate programmatic view switching
+    print("\nProgrammatic view switching:")
+    
+    # Set up the plot first
+    viewer.setup_plot()
+    
+    for view in viewer.get_available_views():
+        viewer.set_view(view)
+        print(f"  - Switched to {view} view")
+        print(f"    Scrolling through {viewer.dimension_names[viewer.available_views[view]['scroll_dim']]}")
+        
+        # Save a sample from each view
+        viewer.save_current_view(f'sample_{view.lower()}_view.png')
+        print(f"    Saved sample to sample_{view.lower()}_view.png")
+    
+    print("\nCall viewer.show() to see the interactive version")
     return viewer
 
 
-def example_acquisition_data_viewer():
-    """Example of using SIRFViewer with AcquisitionData."""
-    print("\n=== AcquisitionData Viewer Example ===")
+def demo_acquisition_views():
+    """Demonstrate view switching with AcquisitionData."""
+    print("\n=== AcquisitionData View Switching Demo ===")
 
-    # Create or load AcquisitionData
-    if SIRF_AVAILABLE:
-        # In real usage, you would load from file:
-        # acq_data = sirf.AcquisitionData('path/to/your/data.hs')
-        print("SIRF available - in real usage, load AcquisitionData from .hs file")
-    else:
-        print("Using mock AcquisitionData for demonstration")
-    acq_data = create_mock_acquisition_data()
+    # Create acquisition test data
+    acq_data = MockSIRFData((5, 20, 48, 48), 'AcquisitionData')
+    print(f"Created AcquisitionData with shape: {acq_data.shape}")
+
     # Create viewer
-    viewer = SIRFViewer(acq_data, "My Acquisition Data")
+    viewer = SIRFViewer(acq_data, "AcquisitionData View Switching Demo")
 
-    # Print data info
-    from sirf_viewer.utils import get_data_info, print_data_info
-    print_data_info(acq_data)
+    print("\nAvailable views:")
+    for view in viewer.get_available_views():
+        print(f"  - {view}")
 
-    # Navigate through different dimensions
-    print("\nNavigating through dimensions...")
+    print("\nThe interactive viewer will have:")
+    print("  - Buttons to switch between different 2D projections")
+    print("  - Multiple sliders for each view (e.g., ToF + View for sinogram)")
+    print("  - Different combinations of the 4D data dimensions")
 
-    # Change ToF bin
-    viewer.current_indices[0] = 2
-    print(f"  Set ToF bin to: {viewer.current_indices[0]}")
+    # Demonstrate programmatic view switching
+    print("\nProgrammatic view switching:")
 
-    # Change view
-    viewer.current_indices[1] = 8
-    print(f"  Set view to: {viewer.current_indices[1]}")
+    viewer.setup_plot()
 
-    # Save current view
-    print("\nSaving current view...")
-    save_view_as_image(acq_data, 'example_acquisition_slice.png', 
-                      indices=[2, 8, 32, 32], colormap='plasma')
-    print("  Saved to: example_acquisition_slice.png")
+    for view in viewer.get_available_views():
+        viewer.set_view(view)
+        view_config = viewer.available_views[view]
+        print(f"  - Switched to {view}")
+        print(f"    Primary scroll: {viewer.dimension_names[view_config['scroll_dim']]}")
 
-    # Create GIF animation (animate through ToF bins)
-    print("\nCreating GIF animation...")
-    create_gif_from_data(acq_data, 'example_acquisition_animation.gif', 
-                       fps=3, dimensions=[0])
-    print("  Created: example_acquisition_animation.gif")
+        if controllable_dims := view_config.get('controllable_dims', []):
+            ctrl_names = [viewer.dimension_names[i] for i in controllable_dims]
+            print(f"    Also controls: {', '.join(ctrl_names)}")
 
-    print("\nTo display the viewer interactively, call:")
-    print("  viewer.show()")
-    print("(This would open a matplotlib window)")
+        # Save a sample
+        viewer.save_current_view(f'sample_acq_{view.lower().replace(" ", "_").replace("(", "").replace(")", "")}.png')
 
+    print("\nCall viewer.show() to see the interactive version")
     return viewer
 
 
-def example_notebook_viewer():
-    """Example of using NotebookViewer for Jupyter notebooks."""
-    print("\n=== Notebook Viewer Example ===")
+def demo_notebook_viewer():
+    """Demonstrate NotebookViewer with view switching."""
+    print("\n=== NotebookViewer View Switching Demo ===")
     
-    # Create mock data
-    image_data = create_mock_image_data()
+    # Create test data
+    image_data = MockSIRFData((20, 80, 80), 'ImageData')
+    print(f"Created ImageData for notebook viewer: {image_data.shape}")
     
     # Create notebook viewer
-    print("Creating notebook viewer...")
-    viewer = NotebookViewer(image_data, width=600, height=400)
+    nb_viewer = NotebookViewer(image_data, width=600, height=500)
     
-    print("Notebook viewer created with:")
-    print(f"  - Dimensions: {viewer.dimensions}")
-    print(f"  - Dimension names: {viewer.dimension_names}")
-    print(f"  - Size: {viewer.width}x{viewer.height}")
+    print("\nNotebookViewer features:")
+    print("  - Dropdown to select view (Axial, Coronal, Sagittal)")
+    print("  - Sliders that automatically rebuild when view changes")
+    print("  - Colormap dropdown")
+    print("  - All in interactive Jupyter widgets")
     
-    print("\nIn a Jupyter notebook, you would use:")
-    print("  viewer.show()")
-    print("This would display interactive widgets in the notebook.")
+    print(f"\nAvailable views: {list(nb_viewer.available_views.keys())}")
     
-    return viewer
+    # Demonstrate programmatic view changes
+    print("\nProgrammatic view switching (for notebook):")
+    for view in nb_viewer.available_views.keys():
+        print(f"  - {view}: {nb_viewer.available_views[view]['labels']}")
+    
+    print("\nIn a Jupyter notebook:")
+    print("  1. Call nb_viewer.show()")
+    print("  2. Use the dropdown to switch views")
+    print("  3. Watch the sliders rebuild automatically")
+    print("  4. See different slice orientations")
+    
+    return nb_viewer
 
 
-def example_batch_processing():
-    """Example of batch processing multiple files."""
-    print("\n=== Batch Processing Example ===")
+def demo_gif_creation():
+    """Demonstrate GIF creation with different views."""
+    print("\n=== GIF Creation with Views ===")
     
-    # Create mock files for demonstration
-    import tempfile
-    import os
+    image_data = MockSIRFData((15, 64, 64), 'ImageData')
+    viewer = SIRFViewer(image_data, "GIF Demo")
     
-    temp_dir = tempfile.mkdtemp()
-    print(f"Created temporary directory: {temp_dir}")
-    
-    # Create mock data files
-    mock_files = []
-    for i in range(3):
-        # Create mock ImageData
-        image_data = create_mock_image_data()
+    # Create GIFs for each view
+    for view in viewer.get_available_views():
+        viewer.set_view(view)
+        filename = f'animation_{view.lower()}.gif'
         
-        # Save as numpy file (in real usage, these would be .hv files)
-        filename = os.path.join(temp_dir, f'mock_image_{i}.npy')
-        np.save(filename, image_data.asarray())
-        mock_files.append(filename)
+        print(f"Creating {view} view animation...")
+        viewer.create_gif(filename, fps=5)
+        print(f"  Saved: {filename}")
     
-    print(f"Created {len(mock_files)} mock files")
-    
-    # Batch process to create thumbnails
-    print("\nBatch processing to create thumbnails...")
-    from sirf_viewer.utils import batch_process_files
-    
-    try:
-        # This would normally process .hv files, but we'll demonstrate the concept
-        output_files = batch_process_files(
-            os.path.join(temp_dir, '*.npy'),
-            temp_dir,
-            operation='info'  # Just create info files for demo
-        )
-        print(f"Processed {len(output_files)} files")
-        
-        # Show created files
-        for output_file in output_files:
-            if os.path.exists(output_file):
-                print(f"  Created: {output_file}")
-                with open(output_file, 'r') as f:
-                    print(f"    Content: {f.read().strip()}")
-                    
-    except Exception as e:
-        print(f"Batch processing failed (expected for mock files): {e}")
-    
-    # Clean up
-    import shutil
-    shutil.rmtree(temp_dir)
-    print(f"\nCleaned up temporary directory: {temp_dir}")
+    print("\nGIF animations created for all views!")
 
 
 def main():
-    """Run all examples."""
-    print("SIRF Viewer - Basic Usage Examples")
-    print("=" * 40)
-
-    try:
-        run_examples()
-    except Exception as e:
-        print(f"\nError running examples: {e}")
-        import traceback
-        traceback.print_exc()
-
-def run_examples():
-    image_viewer = example_image_data_viewer()
-    acq_viewer = example_acquisition_data_viewer()
-    notebook_viewer = example_notebook_viewer()
-    example_batch_processing()
-
-    print("\n" + "=" * 40)
-    print("All examples completed successfully!")
-    print("\nGenerated files:")
-    print("  - example_image_slice.png")
-    print("  - example_image_animation.gif")
-    print("  - example_acquisition_slice.png")
-    print("  - example_acquisition_animation.gif")
+    """Run all view switching demos."""
+    print("SIRF Viewer - View Switching Demonstration")
+    print("=" * 50)
+    
+    # Run demos
+    image_viewer = demo_imagedata_views()
+    acq_viewer = demo_acquisition_views()
+    nb_viewer = demo_notebook_viewer()
+    
+    print("\n" + "=" * 50)
+    print("View switching demos completed!")
+    
+    print("\nTo try the interactive viewers:")
+    print("  image_viewer.show()  # Interactive ImageData viewer")
+    print("  acq_viewer.show()    # Interactive AcquisitionData viewer")
+    print("  nb_viewer.show()     # Interactive notebook viewer")
+    
+    print("\nInteractive features:")
+    print("  - Click view buttons to switch orientations")
+    print("  - Use sliders to navigate through slices")  
+    print("  - Try different colormaps")
+    print("  - Save views and create animations")
+    
+    # Create sample GIFs
+    demo_gif_creation()
+    
+    return {
+        'image_viewer': image_viewer,
+        'acq_viewer': acq_viewer,
+        'nb_viewer': nb_viewer
+    }
 
 
 if __name__ == '__main__':
-    main()
+    viewers = main()
+    
+    viewers['image_viewer'].show()
+    viewers['nb_viewer'].show()

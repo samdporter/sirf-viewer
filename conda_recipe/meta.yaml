@@ -9,7 +9,7 @@ build:
   number: 0
   script: "{{ PYTHON }} -m pip install . -vv"
   noarch: python
-  skip_compile_pyc: true
+  skip_compile_pyc: []
 
 requirements:
   host:

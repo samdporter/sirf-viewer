@@ -6,3 +6,6 @@ __pycache__/
 
 # Generated version file
 src/sirf_viewer/_version.py
+
+# Examples output
+examples/output/
