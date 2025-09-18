@@ -1,13 +1,13 @@
 # src/sirf_viewer/widgets/__init__.py
-from .controls import(
-    DimensionControlWidget, 
-    AnimationControlWidget, 
-    DisplayOptionsWidget
+from .controls import (
+    DimensionControlWidget,
+    AnimationControlWidget,
+    DisplayOptionsWidget,
 )
 
 __all__ = [
     "SIRFImageViewerWidget",
-    "SIRFAcquisitionViewerWidget", 
+    "SIRFAcquisitionViewerWidget",
     "DimensionControlWidget",
     "AnimationControlWidget",
     "DisplayOptionsWidget",

@@ -66,3 +66,9 @@ where = ["src"]
 
 [tool.setuptools_scm]
 write_to = "src/sirf_viewer/_version.py"
+
+[tool.setuptools.package-data]
+yourpkg = ["assets/*.png", "assets/*.ico"]
+
+[tool.setuptools]
+include-package-data = true

@@ -6,25 +6,25 @@ This shows how to use the view switching features in both SIRFViewer and Noteboo
 """
 
 import numpy as np
-import sys
 import os
 
-from sirf_viewer.viewers import SIRFViewer, NotebookViewer
+from sirf_viewer.viewers import SIRFViewer
 
 # create output directory in current folder
-output_dir = os.path.join(os.path.dirname(__file__), 'output')
+output_dir = os.path.join(os.path.dirname(__file__), "output")
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
 os.chdir(output_dir)
+
 
 # Create mock data
 class MockSIRFData:
     """Mock SIRF data object for testing view switching."""
 
-    def __init__(self, shape, class_name='ImageData'):
+    def __init__(self, shape, class_name="ImageData"):
         self.shape = shape
         self._class_name = class_name
-        if class_name == 'ImageData':
+        if class_name == "ImageData":
             self._data = self._create_anatomical_image_data(shape)
         else:
             self._data = self._create_structured_acquisition_data(shape)
@@ -48,18 +48,26 @@ class MockSIRFData:
 
                     # Axial feature (circular in axial view)
                     axial_dist = np.sqrt((iy - center_y) ** 2 + (ix - center_x) ** 2)
-                    axial_feature = 500 * np.exp(-axial_dist**2 / 800) if axial_dist < 40 else 0
+                    axial_feature = (
+                        500 * np.exp(-(axial_dist**2) / 800) if axial_dist < 40 else 0
+                    )
 
                     # Sagittal feature (vertical stripe in sagittal view)
-                    sagittal_feature = 300 * np.exp(-((iz - center_z) ** 2 + (iy - center_y + 20) ** 2) / 200)
+                    sagittal_feature = 300 * np.exp(
+                        -((iz - center_z) ** 2 + (iy - center_y + 20) ** 2) / 200
+                    )
 
                     # Coronal feature (horizontal stripe in coronal view)
-                    coronal_feature = 400 * np.exp(-((iz - center_z + 15) ** 2 + (ix - center_x) ** 2) / 300)
+                    coronal_feature = 400 * np.exp(
+                        -((iz - center_z + 15) ** 2 + (ix - center_x) ** 2) / 300
+                    )
 
                     # Z-variation
                     z_factor = 1.0 + 0.3 * np.sin(2 * np.pi * iz / max(1, z))
 
-                    data[iz, iy, ix] = noise + z_factor * (axial_feature + sagittal_feature + coronal_feature)
+                    data[iz, iy, ix] = noise + z_factor * (
+                        axial_feature + sagittal_feature + coronal_feature
+                    )
 
         return np.maximum(data, 0)  # Ensure non-negative
 
@@ -80,12 +88,20 @@ class MockSIRFData:
                         noise = rng.normal(0, 5)
 
                         # Sinogram-like pattern
-                        sino_feature = 100 * np.exp(-((r - center_r) ** 2 + (a - center_a) ** 2) / 100)
+                        sino_feature = 100 * np.exp(
+                            -((r - center_r) ** 2 + (a - center_a) ** 2) / 100
+                        )
 
                         # View-dependent variation
-                        view_variation = 50 * np.sin(2 * angle) * np.exp(-(r - center_r) ** 2 / 200)
+                        view_variation = (
+                            50
+                            * np.sin(2 * angle)
+                            * np.exp(-((r - center_r) ** 2) / 200)
+                        )
 
-                        data[t, v, r, a] = noise + tof_factor * (sino_feature + view_variation)
+                        data[t, v, r, a] = noise + tof_factor * (
+                            sino_feature + view_variation
+                        )
 
         return np.maximum(data, 0)
 
@@ -95,7 +111,7 @@ def demo_imagedata_views():
     print("=== ImageData View Switching Demo ===")
 
     # Create anatomical-like test data
-    image_data = MockSIRFData((30, 100, 100), 'ImageData')
+    image_data = MockSIRFData((30, 100, 100), "ImageData")
     print(f"Created ImageData with shape: {image_data.shape}")
 
     # Create viewer
@@ -116,13 +132,13 @@ def demo_imagedata_views():
     for view in viewer.get_available_views():
         viewer.set_view(view)
         vd = viewer.state.views[view]
-        scroll_dim = vd['scroll_dim']
+        scroll_dim = vd["scroll_dim"]
         dim_name = viewer.state.dim_names[scroll_dim]
         print(f"  - Switched to {view} view")
         print(f"    Scrolling through {dim_name}")
 
         # Save a sample from each view
-        viewer.save_current_view(f'sample_{view.lower()}_view.png')
+        viewer.save_current_view(f"sample_{view.lower()}_view.png")
         print(f"    Saved sample to sample_{view.lower()}_view.png")
 
     print("\nCall viewer.show() to see the interactive version")
@@ -134,7 +150,7 @@ def demo_acquisition_views():
     print("\n=== AcquisitionData View Switching Demo ===")
 
     # Create acquisition test data
-    acq_data = MockSIRFData((5, 20, 48, 48), 'AcquisitionData')
+    acq_data = MockSIRFData((5, 20, 48, 48), "AcquisitionData")
     print(f"Created AcquisitionData with shape: {acq_data.shape}")
 
     # Create viewer
@@ -156,15 +172,15 @@ def demo_acquisition_views():
         viewer.set_view(view)
         view_config = viewer.state.views[view]
         print(f"  - Switched to {view}")
-        primary_name = viewer.state.dim_names[view_config['scroll_dim']]
+        primary_name = viewer.state.dim_names[view_config["scroll_dim"]]
         print(f"    Primary scroll: {primary_name}")
 
-        if controllable_dims := view_config.get('controllable_dims', []):
+        if controllable_dims := view_config.get("controllable_dims", []):
             ctrl_names = [viewer.state.dim_names[i] for i in controllable_dims]
             print(f"    Also controls: {', '.join(ctrl_names)}")
 
         # Save a sample
-        out_name = f'sample_acq_{view.lower().replace(" ", "_").replace("(", "").replace(")", "")}.png'
+        out_name = f"sample_acq_{view.lower().replace(' ', '_').replace('(', '').replace(')', '')}.png"
         viewer.save_current_view(out_name)
         print(f"    Saved sample to {out_name}")
 
@@ -176,13 +192,13 @@ def demo_gif_creation():
     """Demonstrate GIF creation with different views."""
     print("\n=== GIF Creation with Views ===")
 
-    image_data = MockSIRFData((15, 64, 64), 'ImageData')
+    image_data = MockSIRFData((15, 64, 64), "ImageData")
     viewer = SIRFViewer(image_data, "GIF Demo")
 
     # Create GIFs for each view
     for view in viewer.get_available_views():
         viewer.set_view(view)
-        filename = f'animation_{view.lower()}.gif'
+        filename = f"animation_{view.lower()}.gif"
 
         print(f"Creating {view} view animation...")
         viewer.create_gif(filename, fps=5)
@@ -217,13 +233,13 @@ def main():
     demo_gif_creation()
 
     return {
-        'image_viewer': image_viewer,
-        'acq_viewer': acq_viewer,
+        "image_viewer": image_viewer,
+        "acq_viewer": acq_viewer,
     }
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     viewers = main()
 
-    viewers['image_viewer'].show()
-    viewers['acq_viewer'].show()
+    viewers["image_viewer"].show()
+    viewers["acq_viewer"].show()
