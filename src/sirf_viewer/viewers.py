@@ -368,7 +368,10 @@ class SIRFViewer:
                 ax.imshow(bg_slice, cmap=self._bg_cmap, origin="upper", aspect=aspect)
             # foreground
             im, _ = plot_slice(ax, self.state)
-            im.set_alpha(self._bg_alpha)
+            if self._bg_arr is not None:
+                im.set_alpha(self._bg_alpha)
+            else:
+                im.set_alpha(1.0)
             fig.savefig(filename, dpi=150, bbox_inches="tight")
             plt.close(fig)
         else:
@@ -785,7 +788,10 @@ class NotebookViewer:
 
         # Foreground
         im, _ = plot_slice(ax, self.state)
-        im.set_alpha(self._bg_alpha)
+        if self._bg_arr is not None:
+            im.set_alpha(self._bg_alpha)
+        else:
+            im.set_alpha(1.0)
         plt.colorbar(im, ax=ax)
         plt.show()
 
@@ -874,7 +880,10 @@ class NotebookViewer:
 
             # Foreground
             im, _ = plot_slice(ax, self.state)
-            im.set_alpha(self._bg_alpha)
+            if self._bg_arr is not None:
+                im.set_alpha(self._bg_alpha)
+            else:
+                im.set_alpha(1.0)
 
             fig.colorbar(im, ax=ax)  # colourbar for foreground
             plt.show()
