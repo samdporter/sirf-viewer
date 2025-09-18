@@ -12,6 +12,12 @@ Background overlay:
   - Shape must match foreground exactly.
   - If both voxel sizes are available, they must match (within tolerance).
   - The foreground (emission) is drawn on top with configurable alpha.
+
+Intensity control (single, consistent):
+  - Display range (vmin, vmax) controls the mapping for imshow.
+  - If not set (None), each slice auto-scales on load (matplotlib default).
+  - "Auto Range" buttons compute vmin/vmax from percentiles of the current slice.
+  - set_window(level, width) maps to display range: vmin=level-width/2, vmax=level+width/2.
 """
 
 from __future__ import annotations
@@ -21,20 +27,18 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider, Button, TextBox
 import matplotlib.animation as animation
 import warnings
 
 try:
     import sirf.STIR as sirf  # noqa: F401
-
     SIRF_AVAILABLE = True
 except ImportError:
     SIRF_AVAILABLE = False
     warnings.warn(
         "SIRF not available. Install sirf to use SIRF data objects.", RuntimeWarning
     )
-
 
 # ----------------------------- Core (UI-agnostic) -----------------------------
 
@@ -150,12 +154,6 @@ def compute_aspect(
     return "equal"
 
 
-def apply_window_level(data: np.ndarray, level: float, width: float) -> np.ndarray:
-    min_val = level - width / 2.0
-    max_val = level + width / 2.0
-    return np.clip(data, min_val, max_val)
-
-
 def title_for(state: "ViewerState") -> str:
     v = state.views[state.view]
     parts = [
@@ -172,12 +170,14 @@ def title_for(state: "ViewerState") -> str:
 def plot_slice(ax: plt.Axes, state: "ViewerState"):
     """Render current foreground slice on provided Axes. Returns (AxesImage, labels)."""
     arr = get_slice(state.data, state.indices, state.view, state.views)
-    if state.window is not None:
-        arr = apply_window_level(arr, *state.window)
     aspect = compute_aspect(
         state.voxel_sizes if state.data.ndim == 3 else None, state.view
     )
-    im = ax.imshow(arr, cmap=state.colormap, origin="upper", aspect=aspect)
+    imshow_kwargs = dict(cmap=state.colormap, origin="upper", aspect=aspect)
+    if state.vmin is not None and state.vmax is not None:
+        imshow_kwargs["vmin"] = state.vmin
+        imshow_kwargs["vmax"] = state.vmax
+    im = ax.imshow(arr, **imshow_kwargs)
     v = state.views[state.view]
     ax.set_xlabel(v["labels"][1])
     ax.set_ylabel(v["labels"][0])
@@ -219,15 +219,16 @@ def create_gif_core(
 @dataclass
 class ViewerState:
     """Holds data and viewing parameters; pure and UI-agnostic."""
-
     data: np.ndarray
     dim_names: List[str]
     views: Dict[str, Dict[str, Any]]
     view: str
     indices: List[int]
     colormap: str = "gray"
-    window: Optional[Tuple[float, float]] = None  # (level, width)
     voxel_sizes: Optional[Tuple[float, float, float]] = None  # (z, y, x) for 3D only
+    # Single consistent intensity control:
+    vmin: Optional[float] = None
+    vmax: Optional[float] = None
 
     @property
     def shape(self) -> Tuple[int, ...]:
@@ -241,8 +242,9 @@ class ViewerState:
             view=self.view,
             indices=list(self.indices),
             colormap=self.colormap,
-            window=self.window,
             voxel_sizes=self.voxel_sizes,
+            vmin=self.vmin,
+            vmax=self.vmax,
         )
         fields.update(updates)
         return ViewerState(**fields)
@@ -274,13 +276,10 @@ def to_state(data_obj: Any, colormap: str = "gray") -> ViewerState:
         view=view,
         indices=indices,
         colormap=colormap,
-        window=None,
         voxel_sizes=vxs,
     )
 
-
 # ----------------------------- Matplotlib desktop -----------------------------
-
 
 class SIRFViewer:
     """
@@ -307,6 +306,8 @@ class SIRFViewer:
         self.colorbar = None
         self.sliders: List[Slider] = []
         self.buttons: List[Button] = []
+        self._tb_min: Optional[TextBox] = None
+        self._tb_max: Optional[TextBox] = None
 
         # Background overlay storage
         self._bg_arr: Optional[np.ndarray] = None
@@ -316,7 +317,6 @@ class SIRFViewer:
 
         # Backward-compatible init: allow passing background_image directly
         if background_image is not None:
-            # Try to use as ndarray; else try as SIRF-like object
             try:
                 self.set_background(
                     background_image, alpha=self._bg_alpha, cmap=self._bg_cmap
@@ -350,14 +350,20 @@ class SIRFViewer:
         if self.fig is not None:
             self._redraw()
 
+    # Backwards-compatible API: map window/level to display range
     def set_window(self, level: float, width: float):
-        self.state.window = (level, width)
+        vmin = float(level - width / 2.0)
+        vmax = float(level + width / 2.0)
+        self.set_display_range(vmin, vmax)
+
+    def set_display_range(self, vmin: Optional[float], vmax: Optional[float]):
+        self.state.vmin = vmin
+        self.state.vmax = vmax
         if self.fig is not None:
             self._redraw()
 
     def save_current_view(self, filename: str):
         if self.fig is None or self.ax is None:
-            # draw to a temporary, non-interactive figure
             fig, ax = plt.subplots(figsize=(12, 10))
             # background first (if any)
             if (self._bg_arr is not None) and (self.state.data.ndim == 3):
@@ -368,10 +374,7 @@ class SIRFViewer:
                 ax.imshow(bg_slice, cmap=self._bg_cmap, origin="upper", aspect=aspect)
             # foreground
             im, _ = plot_slice(ax, self.state)
-            if self._bg_arr is not None:
-                im.set_alpha(self._bg_alpha)
-            else:
-                im.set_alpha(1.0)
+            im.set_alpha(self._bg_alpha if self._bg_arr is not None else 1.0)
             fig.savefig(filename, dpi=150, bbox_inches="tight")
             plt.close(fig)
         else:
@@ -395,22 +398,6 @@ class SIRFViewer:
     ):
         """
         Set a 3D background image (e.g. µ-map) for ImageData overlays.
-
-        Requirements:
-          - Foreground must be 3D ImageData (z,y,x).
-          - Background must be 3D with identical shape.
-          - If voxel sizes are available for both, they must match (within tol).
-
-        Parameters
-        ----------
-        bg_obj : Any | np.ndarray
-            SIRF ImageData-like object (must provide .asarray()), or a numpy ndarray.
-        alpha : float
-            Alpha applied to the *foreground* (emission) so the background is visible underneath.
-        cmap : str
-            Matplotlib colormap for the background.
-        rtol, atol : float
-            Tolerances for voxel size comparison.
         """
         if self.state.data.ndim != 3:
             raise ValueError("Background overlay is only supported for 3D ImageData.")
@@ -475,26 +462,20 @@ class SIRFViewer:
     def _set_window_icon(self):
         """Qt-only: set figure window + app icon; no-ops elsewhere."""
         try:
-            # lazy import so non-Qt users aren't forced to have PyQt5 installed
             from sirf_viewer.icons import app_icon  # returns PyQt5.QtGui.QIcon
             from PyQt5.QtWidgets import QApplication
 
-            # only attempt on Qt backends
             if "qt" not in str(plt.get_backend()).lower():
                 return
 
             icon = app_icon()
-
-            # app-wide (taskbar/dock on many platforms)
             app = QApplication.instance()
             if app is not None:
                 app.setWindowIcon(icon)
 
-            # this figure's window
             mgr = self.fig.canvas.manager
             if hasattr(mgr, "window") and hasattr(mgr.window, "setWindowIcon"):
                 mgr.window.setWindowIcon(icon)
-
         except Exception as e:
             warnings.warn(f"Could not set window icon: {e}", RuntimeWarning)
 
@@ -516,13 +497,12 @@ class SIRFViewer:
             bg_slice = get_slice(
                 self._bg_arr, self.state.indices, self.state.view, self.state.views
             )
-            # Use same aspect as foreground for consistent pixel geometry
             aspect = compute_aspect(self.state.voxel_sizes, self.state.view)
             self.ax.imshow(bg_slice, cmap=self._bg_cmap, origin="upper", aspect=aspect)
 
         # 2) Foreground (emission) on top
         self.im, _ = plot_slice(self.ax, self.state)
-        self.im.set_alpha(self._bg_alpha)
+        self.im.set_alpha(self._bg_alpha if self._bg_arr is not None else 1.0)
 
         # Colourbar tied to foreground
         if self.colorbar is None:
@@ -625,7 +605,7 @@ class SIRFViewer:
         btn_save.on_clicked(_save)
         self.buttons.append(btn_save)
 
-        # Auto W/L
+        # Auto Range (percentiles on current slice)
         ax_auto = plt.axes(
             [
                 button_col,
@@ -634,23 +614,82 @@ class SIRFViewer:
                 button_height,
             ]
         )
-        btn_auto = Button(ax_auto, "Auto W/L")
+        btn_auto = Button(ax_auto, "Auto Range")
 
         def _auto(_e):
             data = get_slice(
                 self.state.data, self.state.indices, self.state.view, self.state.views
             )
-            lvl = float(np.percentile(data, 50.0))
-            wid = float(np.percentile(data, 98.0) - np.percentile(data, 2.0))
-            self.set_window(lvl, wid)
-            print(f"Auto W/L: Level={lvl:.3g}, Width={wid:.3g}")
+            vmin = float(np.percentile(data, 2.0))
+            vmax = float(np.percentile(data, 99.0))
+            self.set_display_range(vmin, vmax)
+            # update text boxes too
+            if self._tb_min is not None:
+                self._tb_min.set_val(f"{vmin:.6g}")
+            if self._tb_max is not None:
+                self._tb_max.set_val(f"{vmax:.6g}")
+            print(f"Auto Range: [{vmin:.3g}, {vmax:.3g}]")
 
         btn_auto.on_clicked(_auto)
         self.buttons.append(btn_auto)
 
+        # Manual Range TextBoxes
+        # Min
+        ax_min = plt.axes(
+            [button_col, start - 3 * (button_height + button_spacing), button_width, button_height]
+        )
+        self._tb_min = TextBox(ax_min, "Min", initial="")
+        # Max
+        ax_max = plt.axes(
+            [button_col, start - 4 * (button_height + button_spacing), button_width, button_height]
+        )
+        self._tb_max = TextBox(ax_max, "Max", initial="")
+
+        def _parse_textbox_value(val: str) -> Optional[float]:
+            s = val.strip()
+            if s == "":
+                return None
+            return float(s)
+
+        def _on_min_submit(text):
+            try:
+                vmin = _parse_textbox_value(text)
+                vmax = self.state.vmax
+                # If both None -> auto; if only vmin set, keep vmax as-is
+                self.set_display_range(vmin, vmax)
+            except Exception as e:
+                print(f"Invalid Min: {e}")
+
+        def _on_max_submit(text):
+            try:
+                vmax = _parse_textbox_value(text)
+                vmin = self.state.vmin
+                self.set_display_range(vmin, vmax)
+            except Exception as e:
+                print(f"Invalid Max: {e}")
+
+        self._tb_min.on_submit(_on_min_submit)
+        self._tb_max.on_submit(_on_max_submit)
+
+        # Reset to auto
+        ax_reset = plt.axes(
+            [button_col, start - 5 * (button_height + button_spacing), button_width, button_height]
+        )
+        btn_reset = Button(ax_reset, "Reset Auto")
+
+        def _reset(_e):
+            self.set_display_range(None, None)
+            if self._tb_min is not None:
+                self._tb_min.set_val("")
+            if self._tb_max is not None:
+                self._tb_max.set_val("")
+            print("Display range reset to automatic")
+
+        btn_reset.on_clicked(_reset)
+        self.buttons.append(btn_reset)
+
 
 # ----------------------------- Jupyter notebook ------------------------------
-
 
 class NotebookViewer:
     """ipywidgets-based viewer reusing the shared core and identical behaviour."""
@@ -686,6 +725,11 @@ class NotebookViewer:
         self._bg_alpha: float = 0.5
         self._bg_cmap: str = "gray"
         self._bg_voxel_sizes: Optional[Tuple[float, float, float]] = None
+
+        # Range controls
+        self.range_min = None
+        self.range_max = None
+        self.reset_button = None
 
     def show(self):
         if not self.widgets_available:
@@ -761,7 +805,6 @@ class NotebookViewer:
         self._bg_cmap = cmap
         self._bg_voxel_sizes = bg_vxs
 
-        # live refresh if shown
         if getattr(self, "output", None) is not None:
             self._update_plot()
 
@@ -770,6 +813,24 @@ class NotebookViewer:
         self._bg_arr = None
         self._bg_voxel_sizes = None
         if getattr(self, "output", None) is not None:
+            self._update_plot()
+
+    # Single consistent intensity control (public)
+    def set_window(self, level: float, width: float):
+        """Compatibility: maps window/level to display range."""
+        vmin = float(level - width / 2.0)
+        vmax = float(level + width / 2.0)
+        self.set_display_range(vmin, vmax)
+
+    def set_display_range(self, vmin: Optional[float], vmax: Optional[float]):
+        self.state.vmin = vmin
+        self.state.vmax = vmax
+        if getattr(self, "output", None) is not None:
+            # keep widget boxes in sync if present
+            if self.range_min is not None:
+                self.range_min.value = vmin
+            if self.range_max is not None:
+                self.range_max.value = vmax
             self._update_plot()
 
     # ---- internals ----
@@ -788,10 +849,7 @@ class NotebookViewer:
 
         # Foreground
         im, _ = plot_slice(ax, self.state)
-        if self._bg_arr is not None:
-            im.set_alpha(self._bg_alpha)
-        else:
-            im.set_alpha(1.0)
+        im.set_alpha(self._bg_alpha if self._bg_arr is not None else 1.0)
         plt.colorbar(im, ax=ax)
         plt.show()
 
@@ -807,12 +865,13 @@ class NotebookViewer:
 
         def _on_view(change):
             self.state.view = change.new
-            self._rebuild_sliders()
+            self._build_sliders()  # rebuild for new view dims
+            self._rebuild_layout()
             self._update_plot()
 
         self.view_dropdown.observe(_on_view, names="value")
 
-        # Sliders (initial)
+        # Initial sliders and layout
         self._build_sliders()
 
         # Colormap selector
@@ -825,6 +884,36 @@ class NotebookViewer:
             self._update_plot()
 
         self.colormap_dropdown.observe(_on_cmap, names="value")
+
+        # Range controls
+        self.range_min = w.FloatText(
+            value=self.state.vmin, description="Min:", placeholder="auto"
+        )
+        self.range_max = w.FloatText(
+            value=self.state.vmax, description="Max:", placeholder="auto"
+        )
+
+        def _on_range_change(_):
+            self.state.vmin = self.range_min.value
+            self.state.vmax = self.range_max.value
+            self._update_plot()
+
+        self.range_min.observe(_on_range_change, names="value")
+        self.range_max.observe(_on_range_change, names="value")
+
+        self.reset_button = w.Button(description="Auto Range")
+        def _on_reset(_):
+            # compute from current slice percentiles
+            data = get_slice(
+                self.state.data, self.state.indices, self.state.view, self.state.views
+            )
+            vmin = float(np.percentile(data, 2.0))
+            vmax = float(np.percentile(data, 98.0))
+            self.range_min.value = vmin
+            self.range_max.value = vmax
+            # _on_range_change will trigger update
+
+        self.reset_button.on_click(_on_reset)
 
         self.output = w.Output()
         self._rebuild_layout()
@@ -853,13 +942,18 @@ class NotebookViewer:
             s.observe(_cb, names="value")
             self.sliders.append(s)
 
-    def _rebuild_sliders(self):
-        self._build_sliders()
-        self._rebuild_layout()
-
     def _rebuild_layout(self):
         w = self._widgets
-        controls = w.VBox([self.view_dropdown, *self.sliders, self.colormap_dropdown])
+        controls = w.VBox(
+            [
+                self.view_dropdown,
+                *self.sliders,
+                self.colormap_dropdown,
+                self.range_min,
+                self.range_max,
+                self.reset_button,
+            ]
+        )
         viewer = w.VBox([controls, self.output])
         self._clear_output(wait=True)
         self._display(viewer)
@@ -880,10 +974,7 @@ class NotebookViewer:
 
             # Foreground
             im, _ = plot_slice(ax, self.state)
-            if self._bg_arr is not None:
-                im.set_alpha(self._bg_alpha)
-            else:
-                im.set_alpha(1.0)
+            im.set_alpha(self._bg_alpha if self._bg_arr is not None else 1.0)
 
             fig.colorbar(im, ax=ax)  # colourbar for foreground
             plt.show()
