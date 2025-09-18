@@ -1,0 +1,50 @@
+package:
+  name: sirf-viewer
+  version: "0.1.0"
+
+source:
+  path: ..
+
+build:
+  number: 0
+  script: "{{ PYTHON }} -m pip install . -vv"
+  noarch: python
+  skip_compile_pyc: true
+
+requirements:
+  host:
+    - python >=3.8
+    - pip
+    - setuptools
+  run:
+    - python >=3.8
+    - numpy >=1.20.0
+    - matplotlib >=3.3.0
+    - pyqt >=5.15.0
+    - pillow >=8.0.0
+    - scipy >=1.7.0
+    - tifffile >=2021.0.0
+
+test:
+  imports:
+    - sirf_viewer
+    - sirf_viewer.viewers
+    - sirf_viewer.utils
+    - sirf_viewer.widgets
+
+about:
+  home: https://github.com/sirf-viewer/sirf-viewer
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  summary: "A GUI and Python interface for viewing SIRF ImageData and AcquisitionData"
+  description: |
+    SIRF Viewer provides a comprehensive GUI and Python interface for viewing 
+    SIRF ImageData and AcquisitionData objects with interactive controls and 
+    animation capabilities.
+  doc_url: https://sirf-viewer.readthedocs.io
+  dev_url: https://github.com/sirf-viewer/sirf-viewer
+
+extra:
+  recipe-maintainers:
+    - your-github-username
