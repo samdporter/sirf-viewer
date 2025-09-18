@@ -1,0 +1,6 @@
+# setup.py
+from setuptools import setup
+
+# This setup.py is only for backward compatibility
+# The main configuration is in pyproject.toml
+setup()
