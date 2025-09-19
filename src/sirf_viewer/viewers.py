@@ -620,8 +620,8 @@ class SIRFViewer:
             data = get_slice(
                 self.state.data, self.state.indices, self.state.view, self.state.views
             )
-            vmin = float(np.percentile(data, 2.0))
-            vmax = float(np.percentile(data, 99.0))
+            vmin = float(np.percentile(data, 0.0))
+            vmax = float(np.percentile(data, 99.9))
             self.set_display_range(vmin, vmax)
             # update text boxes too
             if self._tb_min is not None:
@@ -647,9 +647,7 @@ class SIRFViewer:
 
         def _parse_textbox_value(val: str) -> Optional[float]:
             s = val.strip()
-            if s == "":
-                return None
-            return float(s)
+            return float(s) if s else None
 
         def _on_min_submit(text):
             try:
@@ -907,8 +905,8 @@ class NotebookViewer:
             data = get_slice(
                 self.state.data, self.state.indices, self.state.view, self.state.views
             )
-            vmin = float(np.percentile(data, 2.0))
-            vmax = float(np.percentile(data, 98.0))
+            vmin = float(np.percentile(data, 0.0))
+            vmax = float(np.percentile(data, 99.9))
             self.range_min.value = vmin
             self.range_max.value = vmax
             # _on_range_change will trigger update
